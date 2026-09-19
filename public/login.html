@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morning Command Center — Log In</title>
+    <link rel="stylesheet" href="style.css?v=4">
+    <style>
+        /* Applied immediately (before the page paints) so this page matches
+           whatever theme was last chosen on the main app — no flash. */
+    </style>
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('mcc-theme');
+                if (saved === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+            } catch (error) {
+                // localStorage unavailable — just stay on the default dark theme
+            }
+        })();
+    </script>
+    <style>
+        body {
+            background-color: var(--bg-page);
+            color: var(--body-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .auth-wrap {
+            width: 100%;
+            max-width: 380px;
+        }
+
+        .auth-brand {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .auth-brand h1 {
+            color: var(--accent);
+            font-size: 1.5rem;
+            margin: 0 0 4px 0;
+        }
+
+        .auth-brand p {
+            color: var(--text-faint);
+            font-size: 0.85rem;
+            margin: 0;
+        }
+
+        .auth-card {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+        }
+
+        .auth-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            background-color: var(--bg-page);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .auth-tab {
+            flex: 1;
+            background: none;
+            border: none;
+            border-radius: 6px;
+            padding: 9px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-faint);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .auth-tab.active {
+            background-color: var(--accent-soft-bg);
+            color: var(--accent);
+        }
+
+        .auth-form {
+            display: none;
+        }
+
+        .auth-form.active {
+            display: block;
+        }
+
+        .auth-label {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .auth-error {
+            display: none;
+            background-color: var(--danger-bg);
+            border: 1px solid var(--danger-border);
+            color: var(--danger);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 0.82rem;
+            margin-bottom: 14px;
+        }
+
+        .auth-error.visible {
+            display: block;
+        }
+
+        .auth-switch-hint {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-faint);
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="auth-wrap">
+        <div class="auth-brand">
+            <h1>Morning Command Center</h1>
+            <p>Your budget, bills, goals, and daily plan — in one place.</p>
+        </div>
+
+        <div class="auth-card">
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tab-login-btn" onclick="switchAuthTab('login')">Log In</button>
+                <button class="auth-tab" id="tab-signup-btn" onclick="switchAuthTab('signup')">Sign Up</button>
+            </div>
+
+            <div class="auth-error" id="auth-error"></div>
+
+            <!-- LOG IN FORM -->
+            <form class="auth-form active" id="login-form" onsubmit="return handleLogin(event)">
+                <label class="auth-label" for="login-email">Email</label>
+                <input class="input-field" type="email" id="login-email" required autocomplete="email">
+
+                <label class="auth-label" for="login-password">Password</label>
+                <input class="input-field" type="password" id="login-password" required autocomplete="current-password">
+
+                <button class="btn" type="submit" id="login-submit-btn">Log In</button>
+            </form>
+
+            <!-- SIGN UP FORM -->
+            <form class="auth-form" id="signup-form" onsubmit="return handleSignup(event)">
+                <label class="auth-label" for="signup-name">Name</label>
+                <input class="input-field" type="text" id="signup-name" required autocomplete="name">
+
+                <label class="auth-label" for="signup-email">Email</label>
+                <input class="input-field" type="email" id="signup-email" required autocomplete="email">
+
+                <label class="auth-label" for="signup-password">Password</label>
+                <input class="input-field" type="password" id="signup-password" required autocomplete="new-password" minlength="6">
+                <p class="auth-switch-hint" style="text-align: left; margin: -6px 0 12px 2px;">At least 6 characters</p>
+
+                <button class="btn" type="submit" id="signup-submit-btn">Create Account</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function switchAuthTab(which) {
+            document.getElementById('auth-error').classList.remove('visible');
+
+            document.getElementById('tab-login-btn').classList.toggle('active', which === 'login');
+            document.getElementById('tab-signup-btn').classList.toggle('active', which === 'signup');
+            document.getElementById('login-form').classList.toggle('active', which === 'login');
+            document.getElementById('signup-form').classList.toggle('active', which === 'signup');
+        }
+
+        function showAuthError(message) {
+            const el = document.getElementById('auth-error');
+            el.textContent = message;
+            el.classList.add('visible');
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            document.getElementById('auth-error').classList.remove('visible');
+
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            const btn = document.getElementById('login-submit-btn');
+
+            btn.disabled = true;
+            btn.textContent = 'Logging in…';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    showAuthError(data.error || 'Invalid email or password');
+                    btn.disabled = false;
+                    btn.textContent = 'Log In';
+                    return false;
+                }
+
+                window.location.href = '/';
+            } catch (error) {
+                showAuthError('Could not reach the server. Please try again.');
+                btn.disabled = false;
+                btn.textContent = 'Log In';
+            }
+
+            return false;
+        }
+
+        async function handleSignup(event) {
+            event.preventDefault();
+            document.getElementById('auth-error').classList.remove('visible');
+
+            const name = document.getElementById('signup-name').value.trim();
+            const email = document.getElementById('signup-email').value.trim();
+            const password = document.getElementById('signup-password').value;
+            const btn = document.getElementById('signup-submit-btn');
+
+            btn.disabled = true;
+            btn.textContent = 'Creating account…';
+
+            try {
+                const res = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password })
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    showAuthError(data.error || 'Could not create your account');
+                    btn.disabled = false;
+                    btn.textContent = 'Create Account';
+                    return false;
+                }
+
+                window.location.href = '/';
+            } catch (error) {
+                showAuthError('Could not reach the server. Please try again.');
+                btn.disabled = false;
+                btn.textContent = 'Create Account';
+            }
+
+            return false;
+        }
+    </script>
+</body>
+</html>

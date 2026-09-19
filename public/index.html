@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morning Command Center</title>
+    <link rel="stylesheet" href="style.css?v=4">
+    <style>
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .header-user-name {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .logout-btn {
+            background: none;
+            border: 1px solid var(--border-strong);
+            color: var(--text-muted);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .logout-btn:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+        .theme-toggle-btn {
+            background: none;
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            line-height: 1;
+        }
+        .theme-toggle-btn:hover {
+            border-color: var(--accent);
+        }
+    </style>
+    <script>
+        // Applied immediately (before the page paints) so switching tabs or
+        // reloading never flashes the wrong theme for a moment.
+        (function() {
+            try {
+                var saved = localStorage.getItem('mcc-theme');
+                if (saved === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+            } catch (error) {
+                // localStorage unavailable — just stay on the default dark theme
+            }
+        })();
+    </script>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-content">
+            <div>
+                <h1>Morning Command Center</h1>
+                <p class="date" id="date"></p>
+            </div>
+            <div class="header-user">
+                <span class="header-user-name" id="header-user-name"></span>
+                <button class="theme-toggle-btn" id="notify-toggle-btn" onclick="toggleNotifications()" title="Notifications"></button>
+                <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Switch theme"></button>
+                <button class="logout-btn" onclick="logout()">Log Out</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION BARS: shown only when you're inside Planner or Money -->
+    <div class="section-bar" id="section-bar-planner">
+        <button class="back-home-btn" onclick="showPage('home')">← Home</button>
+        <div class="section-subnav">
+            <button class="subnav-btn active" onclick="showTab('calendar', this)">📅 Calendar</button>
+            <button class="subnav-btn" onclick="showTab('goals', this)">🎯 Goals</button>
+            <button class="subnav-btn" onclick="showTab('rituals', this)">🌅 Rituals</button>
+            <button class="subnav-btn" onclick="showTab('review', this)">📝 Weekly Review</button>
+            <button class="subnav-btn" onclick="showTab('monthly', this)">🎡 Monthly Reflection</button>
+        </div>
+    </div>
+
+    <div class="section-bar" id="section-bar-money">
+        <button class="back-home-btn" onclick="showPage('home')">← Home</button>
+        <div class="section-subnav">
+            <button class="subnav-btn active" onclick="showTab('budget', this)">💵 Budget</button>
+            <button class="subnav-btn" onclick="showTab('bills', this)">📄 Bills</button>
+            <button class="subnav-btn" onclick="showTab('accounts', this)">🏦 Accounts</button>
+            <button class="subnav-btn" onclick="showTab('cards', this)">💳 Cards</button>
+            <button class="subnav-btn" onclick="showTab('expenses', this)">🧾 Expenses</button>
+        </div>
+    </div>
+
+    <!-- HOME PAGE (Dashboard) -->
+    <div class="page active" id="page-home">
+
+        <div class="brief-panel" id="brief-panel">
+            <div class="brief-greeting" id="brief-greeting"></div>
+
+            <div class="brief-stats" id="brief-stats" style="display:none;">
+                <div class="brief-stat">
+                    <span class="brief-stat-label">Total Balance</span>
+                    <span class="brief-stat-value" id="brief-stat-balance">$0.00</span>
+                </div>
+            </div>
+
+            <div class="brief-loading" id="brief-loading">
+                <div class="pulse">Generating your morning brief...</div>
+            </div>
+            <div class="brief-content" id="brief-content" style="display:none;">
+                <div class="brief-text" id="brief-text"></div>
+                <button class="brief-refresh" onclick="loadMorningBrief()">Refresh Brief</button>
+            </div>
+
+            <div class="brief-section">
+                <div class="brief-section-title">🎯 Today's Priorities</div>
+                <div id="dash-goals">
+                    <div class="dash-empty">Loading goals...</div>
+                </div>
+            </div>
+
+            <div class="brief-section">
+                <div class="brief-section-title">📄 Bills Due Soon</div>
+                <div id="dash-bills">
+                    <div class="dash-empty">Loading bills...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="nav-launch-grid">
+            <button class="nav-launch-card" onclick="showPage('planner')">
+                <span class="nav-launch-icon">🗓️</span>
+                <span class="nav-launch-title">Planner</span>
+                <span class="nav-launch-sub">Calendar · Goals · Rituals · Reviews</span>
+            </button>
+            <button class="nav-launch-card" onclick="showPage('money')">
+                <span class="nav-launch-icon">💰</span>
+                <span class="nav-launch-title">Money</span>
+                <span class="nav-launch-sub">Budget · Bills · Accounts · Expenses</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- PLANNER PAGE -->
+    <div class="page" id="page-planner">
+
+        <!-- CALENDAR TAB -->
+        <div class="tab active" id="tab-calendar">
+            <div class="panel">
+                <div class="calendar-header">
+                    <button class="btn-small" onclick="changeCalendarMonth(-1)">‹ Prev</button>
+                    <h2 id="calendar-month-title"></h2>
+                    <button class="btn-small" onclick="changeCalendarMonth(1)">Next ›</button>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+            </div>
+
+            <div class="panel" style="margin-top: 16px;">
+                <h2 id="calendar-selected-date">Today</h2>
+                <div class="form-row">
+                    <input type="text" id="calendar-task-text" placeholder="Add a task for this day" class="input-field">
+                    <input type="time" id="calendar-task-time" class="input-field" style="flex: 0 0 120px;">
+                </div>
+                <label class="calendar-repeat-toggle">
+                    <input type="checkbox" id="calendar-repeat-check" onchange="toggleRepeatOptions()">
+                    Repeat weekly
+                </label>
+                <div id="calendar-repeat-options" style="display:none;">
+                    <div class="calendar-weekday-picker">
+                        <label><input type="checkbox" value="0"> Sun</label>
+                        <label><input type="checkbox" value="1"> Mon</label>
+                        <label><input type="checkbox" value="2"> Tue</label>
+                        <label><input type="checkbox" value="3"> Wed</label>
+                        <label><input type="checkbox" value="4"> Thu</label>
+                        <label><input type="checkbox" value="5"> Fri</label>
+                        <label><input type="checkbox" value="6"> Sat</label>
+                    </div>
+                    <input type="date" id="calendar-repeat-until" class="input-field" placeholder="Repeat until this date">
+                </div>
+                <button class="btn" onclick="addCalendarTask()" style="margin-top: 10px;">Add</button>
+                <div id="calendar-tasks-list"></div>
+            </div>
+        </div>
+
+        <!-- GOALS TAB -->
+        <div class="tab" id="tab-goals">
+            <div class="panel">
+                <h2>Goals & Tasks</h2>
+                <p class="instructions">Add goals and recurring tasks. Claude uses these to build your morning brief and daily priorities.</p>
+                <input type="text" id="goal-title" placeholder="Goal or task title" class="input-field">
+                <div class="form-row">
+                    <select id="goal-category" class="input-field">
+                        <option value="health">Health</option>
+                        <option value="career">Career</option>
+                        <option value="financial">Financial</option>
+                        <option value="personal">Personal</option>
+                        <option value="family">Family</option>
+                        <option value="home">Home</option>
+                    </select>
+                    <select id="goal-recurrence" class="input-field">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="deadline">Has Deadline</option>
+                        <option value="ongoing">Ongoing</option>
+                    </select>
+                </div>
+                <input type="date" id="goal-deadline" placeholder="Deadline (optional)" class="input-field">
+                <input type="text" id="goal-notes" placeholder="Notes (optional)" class="input-field">
+                <input type="text" id="goal-why" placeholder="Why do you want this? (optional)" class="input-field">
+                <input type="text" id="goal-reward" placeholder="Reward when you hit it (optional)" class="input-field">
+                <button class="btn" onclick="addGoal()">Add Goal</button>
+                <div id="goals-list"></div>
+            </div>
+        </div>
+
+        <!-- RITUALS TAB -->
+        <div class="tab" id="tab-rituals">
+            <div class="panel">
+                <h2>🌅 Morning Routine</h2>
+                <div class="form-row">
+                    <input type="text" id="ritual-morning-text" placeholder="Add a morning routine item" class="input-field">
+                    <button class="btn-small" onclick="addRitualItem('morning')">Add</button>
+                </div>
+                <div id="ritual-morning-list"></div>
+            </div>
+
+            <div class="panel" style="margin-top: 16px;">
+                <h2>🌙 Evening Routine</h2>
+                <div class="form-row">
+                    <input type="text" id="ritual-evening-text" placeholder="Add an evening routine item" class="input-field">
+                    <button class="btn-small" onclick="addRitualItem('evening')">Add</button>
+                </div>
+                <div id="ritual-evening-list"></div>
+            </div>
+
+            <div class="panel" style="margin-top: 16px;">
+                <h2>Gratitude & Affirmation</h2>
+                <p class="instructions">For today — saved automatically as one entry per day.</p>
+                <textarea id="reflection-gratitude" placeholder="What are you grateful for today?" class="input-field" rows="3"></textarea>
+                <input type="text" id="reflection-affirmation" placeholder="Today's affirmation" class="input-field">
+                <button class="btn" onclick="saveDailyReflection()">Save</button>
+            </div>
+        </div>
+
+        <!-- WEEKLY REVIEW TAB -->
+        <div class="tab" id="tab-review">
+            <div class="panel">
+                <h2>Weekly Review</h2>
+                <p class="instructions">Reflect on the week. Saving a review for a week you've already done updates it instead of making a duplicate.</p>
+                <input type="date" id="review-week-start" class="input-field">
+                <input type="text" id="review-main-goal" placeholder="Main goal for the week" class="input-field">
+                <textarea id="review-wins" placeholder="Wins this week" class="input-field" rows="3"></textarea>
+                <textarea id="review-improve" placeholder="What to improve next week" class="input-field" rows="3"></textarea>
+                <button class="btn" onclick="saveWeeklyReview()">Save Review</button>
+                <h3 style="margin-top: 24px; color: #4a9eff;">Past Reviews</h3>
+                <div id="reviews-list"></div>
+            </div>
+        </div>
+
+        <!-- MONTHLY REFLECTION TAB -->
+        <div class="tab" id="tab-monthly">
+            <div class="panel">
+                <h2>Wheel of Life</h2>
+                <p class="instructions">Rate each area of your life from 1 (struggling) to 10 (thriving) for this month.</p>
+                <input type="month" id="monthly-month" class="input-field">
+
+                <div class="wheel-sliders">
+                    <div class="wheel-slider-row">
+                        <label>Health</label>
+                        <input type="range" min="1" max="10" value="5" id="wheel-health" class="wheel-range" oninput="updateWheelChart()">
+                        <span class="wheel-value" id="wheel-health-val">5</span>
+                    </div>
+                    <div class="wheel-slider-row">
+                        <label>Career</label>
+                        <input type="range" min="1" max="10" value="5" id="wheel-career" class="wheel-range" oninput="updateWheelChart()">
+                        <span class="wheel-value" id="wheel-career-val">5</span>
+                    </div>
+                    <div class="wheel-slider-row">
+                        <label>Financial</label>
+                        <input type="range" min="1" max="10" value="5" id="wheel-financial" class="wheel-range" oninput="updateWheelChart()">
+                        <span class="wheel-value" id="wheel-financial-val">5</span>
+                    </div>
+                    <div class="wheel-slider-row">
+                        <label>Personal</label>
+                        <input type="range" min="1" max="10" value="5" id="wheel-personal" class="wheel-range" oninput="updateWheelChart()">
+                        <span class="wheel-value" id="wheel-personal-val">5</span>
+                    </div>
+                    <div class="wheel-slider-row">
+                        <label>Family</label>
+                        <input type="range" min="1" max="10" value="5" id="wheel-family" class="wheel-range" oninput="updateWheelChart()">
+                        <span class="wheel-value" id="wheel-family-val">5</span>
+                    </div>
+                    <div class="wheel-slider-row">
+                        <label>Home</label>
+                        <input type="range" min="1" max="10" value="5" id="wheel-home" class="wheel-range" oninput="updateWheelChart()">
+                        <span class="wheel-value" id="wheel-home-val">5</span>
+                    </div>
+                </div>
+
+                <div id="wheel-chart-container"></div>
+
+                <textarea id="monthly-notes" placeholder="Notes on this month (optional)" class="input-field" rows="3"></textarea>
+                <button class="btn" onclick="saveMonthlyReflection()">Save Reflection</button>
+            </div>
+
+            <div class="panel" style="margin-top: 16px;">
+                <h3 style="color: #4a9eff; margin-bottom: 12px;">Past Months</h3>
+                <div id="monthly-reflections-list"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MONEY PAGE -->
+    <div class="page" id="page-money">
+
+        <!-- BUDGET TAB -->
+        <div class="tab active" id="tab-budget">
+            <div class="panel">
+                <h2>Paycheck Breakdown</h2>
+                <p class="instructions">Enter your paycheck and Claude will allocate it across all your accounts and bills.</p>
+                <input type="number" id="paycheck-amount" placeholder="Paycheck amount ($)" class="input-field">
+                <input type="date" id="paycheck-date" class="input-field">
+                <button class="btn" onclick="getBudget()">Break It Down</button>
+                <div class="result" id="budget-result"></div>
+            </div>
+        </div>
+
+        <!-- BILLS TAB -->
+        <div class="tab" id="tab-bills">
+            <div class="panel">
+                <h2>My Bills</h2>
+                <p class="instructions">Add your recurring bills with their next due date. The app tracks future due dates automatically.</p>
+                <div class="form-row">
+                    <input type="text" id="bill-name" placeholder="Bill name" class="input-field">
+                    <input type="number" id="bill-amount" placeholder="Amount ($)" class="input-field">
+                </div>
+                <div class="form-row">
+                    <input type="date" id="bill-due" class="input-field">
+                    <select id="bill-type" class="input-field">
+                        <option value="fixed">Fixed</option>
+                        <option value="variable">Variable</option>
+                    </select>
+                </div>
+                <select id="bill-frequency" class="input-field">
+                    <option value="monthly">Monthly</option>
+                    <option value="biweekly">Biweekly</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="annual">Annual</option>
+                </select>
+                <button class="btn" onclick="addBill()">Add Bill</button>
+                <div id="bills-list"></div>
+            </div>
+        </div>
+
+        <!-- ACCOUNTS TAB -->
+        <div class="tab" id="tab-accounts">
+            <div class="panel">
+                <h2>My Accounts</h2>
+                <p class="instructions">Track your checking and savings balances. Update them anytime.</p>
+                <div class="form-row">
+                    <input type="text" id="account-name" placeholder="Account name (e.g. Chase)" class="input-field">
+                    <select id="account-type" class="input-field">
+                        <option value="checking">Checking</option>
+                        <option value="savings">Savings</option>
+                        <option value="business">Business</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <input type="number" id="account-balance" placeholder="Current balance ($)" class="input-field">
+                    <input type="number" id="account-allocation" placeholder="Paycheck % (e.g. 70)" class="input-field">
+                </div>
+                <input type="text" id="account-notes" placeholder="Notes (optional)" class="input-field">
+                <button class="btn" onclick="addAccount()">Add Account</button>
+                <div id="accounts-list"></div>
+            </div>
+        </div>
+
+        <!-- CREDIT CARDS TAB -->
+        <div class="tab" id="tab-cards">
+            <div class="panel">
+                <h2>My Credit Cards</h2>
+                <p class="instructions">Track your credit card balances and what each card is used for.</p>
+                <div class="form-row">
+                    <input type="text" id="card-name" placeholder="Card name (e.g. Credit One)" class="input-field">
+                    <input type="number" id="card-balance" placeholder="Current balance ($)" class="input-field">
+                </div>
+                <div class="form-row">
+                    <input type="number" id="card-limit" placeholder="Credit limit ($)" class="input-field">
+                    <input type="text" id="card-purpose" placeholder="Used for (e.g. utilities)" class="input-field">
+                </div>
+                <input type="text" id="card-linked" placeholder="Paid from which account (e.g. Chase)" class="input-field">
+                <button class="btn" onclick="addCard()">Add Card</button>
+                <div id="cards-list"></div>
+            </div>
+        </div>
+
+        <!-- EXPENSES TAB -->
+        <div class="tab" id="tab-expenses">
+            <div class="panel">
+                <h2>Track an Expense</h2>
+                <p class="instructions">Log non-bill spending like gas, food, and leisure.</p>
+                <select id="expense-category" class="input-field">
+                    <option value="gas">Gas</option>
+                    <option value="food">Food</option>
+                    <option value="leisure">Leisure</option>
+                    <option value="clothing">Clothing</option>
+                    <option value="medical">Medical</option>
+                    <option value="other">Other</option>
+                </select>
+                <input type="text" id="expense-description" placeholder="Description" class="input-field">
+                <input type="number" id="expense-amount" placeholder="Amount ($)" class="input-field">
+                <input type="date" id="expense-date" class="input-field">
+                <button class="btn" onclick="addExpense()">Log Expense</button>
+                <div class="result" id="expense-result"></div>
+                <h3 style="margin-top: 24px; color: #4a9eff;">Recent Expenses</h3>
+                <div id="expenses-list"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/app.js?v=4"></script>
+
+</body>
+</html>
