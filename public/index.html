@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Morning Command Center</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=5">
     <style>
         .header-content {
             display: flex;
@@ -36,7 +36,7 @@
             border-color: var(--danger);
             color: var(--danger);
         }
-        .theme-toggle-btn {
+        .settings-gear-btn {
             background: none;
             border: 1px solid var(--border-strong);
             color: var(--text-secondary);
@@ -47,8 +47,51 @@
             transition: all 0.15s ease;
             line-height: 1;
         }
-        .theme-toggle-btn:hover {
+        .settings-gear-btn:hover {
             border-color: var(--accent);
+        }
+        .settings-menu-wrap {
+            position: relative;
+        }
+        .settings-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px;
+            min-width: 190px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+            z-index: 200;
+        }
+        .settings-dropdown.open {
+            display: block;
+        }
+        .settings-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            background: none;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            text-align: left;
+            font-family: inherit;
+        }
+        .settings-dropdown-item:hover {
+            background-color: var(--accent-soft-bg);
+        }
+        .settings-item-icon {
+            font-size: 1.05rem;
+            width: 20px;
+            text-align: center;
+            flex-shrink: 0;
         }
     </style>
     <script>
@@ -76,9 +119,20 @@
             </div>
             <div class="header-user">
                 <span class="header-user-name" id="header-user-name"></span>
-                <button class="theme-toggle-btn" id="notify-toggle-btn" onclick="toggleNotifications()" title="Notifications"></button>
-                <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Switch theme"></button>
                 <button class="logout-btn" onclick="logout()">Log Out</button>
+                <div class="settings-menu-wrap" id="settings-menu-wrap">
+                    <button class="settings-gear-btn" id="settings-gear-btn" onclick="toggleSettingsMenu()" title="Settings">⚙️</button>
+                    <div class="settings-dropdown" id="settings-dropdown">
+                        <button class="settings-dropdown-item" onclick="toggleTheme()">
+                            <span class="settings-item-icon" id="theme-toggle-icon"></span>
+                            <span id="theme-toggle-label"></span>
+                        </button>
+                        <button class="settings-dropdown-item" id="notify-toggle-item" onclick="toggleNotifications()">
+                            <span class="settings-item-icon" id="notify-toggle-icon"></span>
+                            <span id="notify-toggle-label"></span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -435,7 +489,7 @@
 
     </div>
 
-    <script src="/app.js?v=4"></script>
+    <script src="/app.js?v=5"></script>
 
 </body>
 </html>

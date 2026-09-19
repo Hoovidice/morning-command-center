@@ -23,13 +23,33 @@ let calendarViewDate = new Date();
 let calendarSelectedDate = today;
 let calendarMonthTasks = [];
 
+// ── SETTINGS DROPDOWN (gear menu) ───────────────────────
+
+function toggleSettingsMenu() {
+    const dropdown = document.getElementById('settings-dropdown');
+    if (!dropdown) return;
+    dropdown.classList.toggle('open');
+}
+
+// Closes the settings dropdown when you click anywhere outside of it.
+document.addEventListener('click', function (event) {
+    const wrap = document.getElementById('settings-menu-wrap');
+    const dropdown = document.getElementById('settings-dropdown');
+    if (!wrap || !dropdown) return;
+    if (!wrap.contains(event.target)) {
+        dropdown.classList.remove('open');
+    }
+});
+
 // ── LIGHT / DARK THEME ─────────────────────────────────
 
 function updateThemeToggleIcon() {
-    const btn = document.getElementById('theme-toggle-btn');
-    if (!btn) return;
+    const icon = document.getElementById('theme-toggle-icon');
+    const label = document.getElementById('theme-toggle-label');
+    if (!icon || !label) return;
     const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    btn.textContent = isLight ? '🌙' : '☀️';
+    icon.textContent = isLight ? '🌙' : '☀️';
+    label.textContent = isLight ? 'Dark Mode' : 'Light Mode';
 }
 
 function toggleTheme() {
@@ -62,19 +82,22 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function updateNotifyBtnState() {
-    const btn = document.getElementById('notify-toggle-btn');
-    if (!btn) return;
+    const item = document.getElementById('notify-toggle-item');
+    const icon = document.getElementById('notify-toggle-icon');
+    const label = document.getElementById('notify-toggle-label');
+    if (!item || !icon || !label) return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        btn.style.display = 'none';
+        item.style.display = 'none';
         return;
     }
     try {
         const reg = await navigator.serviceWorker.getRegistration();
         const sub = reg ? await reg.pushManager.getSubscription() : null;
-        btn.textContent = sub ? '🔔' : '🔕';
-        btn.title = sub ? 'Notifications on — click to turn off' : 'Notifications off — click to turn on';
+        icon.textContent = sub ? '🔔' : '🔕';
+        label.textContent = sub ? 'Notifications On' : 'Notifications Off';
     } catch (error) {
-        btn.textContent = '🔕';
+        icon.textContent = '🔕';
+        label.textContent = 'Notifications Off';
     }
 }
 
