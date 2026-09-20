@@ -1,9 +1,10 @@
 {
   "name": "morning-command-center",
   "version": "1.0.0",
-  "description": "",
+  "description": "Personal command center: AI morning brief, multi-account budgeting, bill tracking, goals, and planner tools for multiple users.",
   "main": "index.js",
   "scripts": {
+    "start": "node src/server.js",
     "test": "jest --runInBand"
   },
   "keywords": [],
