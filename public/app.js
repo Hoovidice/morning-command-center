@@ -23,6 +23,234 @@ let calendarViewDate = new Date();
 let calendarSelectedDate = today;
 let calendarMonthTasks = [];
 
+// ── ANIMATED NUMBERS ─────────────────────────────────────
+// Counts a dollar figure up (or down) from whatever it last showed to its
+// new value, instead of just replacing the text instantly. Cheap visual
+// trick, but it's one of the fastest ways to make a dashboard feel alive.
+
+let lastShownBalance = 0;
+let lastShownUnassigned = 0;
+
+function animateDollarValue(el, from, to, duration = 700) {
+    if (!el) return;
+    if (typeof from !== 'number' || !isFinite(from)) from = 0;
+    if (typeof to !== 'number' || !isFinite(to)) to = 0;
+
+    const start = performance.now();
+    const change = to - from;
+
+    function step(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+        const current = from + change * eased;
+        el.textContent = `$${formatCurrency(current)}`;
+        if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
+// ── BALANCE SPARKLINE ────────────────────────────────────
+// Draws a small line chart of the last 14 days of total balance directly
+// as an inline SVG — no charting library needed for something this simple.
+// Hidden entirely until there are at least 2 days of history to connect.
+
+function renderBalanceSparkline(history) {
+    const wrap = document.getElementById('balance-sparkline-wrap');
+    const svg = document.getElementById('balance-sparkline');
+    if (!wrap || !svg) return;
+
+    if (!history || history.length < 2) {
+        wrap.style.display = 'none';
+        return;
+    }
+
+    const values = history.map(h => h.balance);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = (max - min) || 1;
+    const width = 300;
+    const height = 40;
+    const padding = 3;
+
+    const points = values.map((v, i) => {
+        const x = values.length === 1 ? 0 : (i / (values.length - 1)) * width;
+        const y = height - padding - ((v - min) / range) * (height - padding * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4a9eff';
+    const areaPoints = `0,${height} ${points.join(' ')} ${width},${height}`;
+
+    svg.innerHTML = `
+        <polyline points="${areaPoints}" fill="${accentColor}" opacity="0.12" stroke="none"></polyline>
+        <polyline points="${points.join(' ')}" fill="none" stroke="${accentColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    `;
+    wrap.style.display = 'block';
+}
+
+// ── CURRENCY FORMATTING ──────────────────────────────────
+// Adds thousands separators (12,345.67 instead of 12345.67) so dollar
+// figures read the way every finance app formats them. Callers still write
+// the literal "$" themselves — this only formats the number part.
+
+function formatCurrency(amount) {
+    const n = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (typeof n !== 'number' || !isFinite(n)) return '0.00';
+    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── APP TOASTS, CONFIRM & PROMPT MODALS ──────────────────
+// Replaces the browser's native alert()/confirm()/prompt() popups — which
+// are unstyled and look the same on every website — with small notifications
+// and dialogs that match the app's own theme.
+
+function showToast(message, type = 'error', duration = 4200) {
+    const container = document.getElementById('app-toast-container') || (() => {
+        const el = document.createElement('div');
+        el.id = 'app-toast-container';
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    const toast = document.createElement('div');
+    toast.className = `app-toast app-toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    setTimeout(() => toast.classList.add('app-toast-out'), duration - 250);
+    setTimeout(() => toast.remove(), duration);
+}
+
+function confirmAction(message) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-modal-overlay';
+        overlay.innerHTML = `
+            <div class="confirm-modal-card">
+                <div class="confirm-modal-message"></div>
+                <div class="confirm-modal-actions">
+                    <button class="btn-small confirm-modal-cancel">Cancel</button>
+                    <button class="btn-danger confirm-modal-confirm">Confirm</button>
+                </div>
+            </div>
+        `;
+        overlay.querySelector('.confirm-modal-message').textContent = message;
+        document.body.appendChild(overlay);
+
+        const cleanup = (result) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('.confirm-modal-cancel').onclick = () => cleanup(false);
+        overlay.querySelector('.confirm-modal-confirm').onclick = () => cleanup(true);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') { document.removeEventListener('keydown', escHandler); cleanup(false); }
+        });
+    });
+}
+
+function promptModal(message, defaultValue = '') {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-modal-overlay';
+        overlay.innerHTML = `
+            <div class="confirm-modal-card">
+                <div class="confirm-modal-message"></div>
+                <input type="text" class="input-field prompt-modal-input" style="margin: 12px 0 0;">
+                <div class="confirm-modal-actions">
+                    <button class="btn-small confirm-modal-cancel">Cancel</button>
+                    <button class="btn confirm-modal-confirm" style="width:auto; margin:0; padding:9px 18px;">Save</button>
+                </div>
+            </div>
+        `;
+        overlay.querySelector('.confirm-modal-message').textContent = message;
+        const input = overlay.querySelector('.prompt-modal-input');
+        input.value = defaultValue === null || defaultValue === undefined ? '' : String(defaultValue);
+        document.body.appendChild(overlay);
+        input.focus();
+        input.select();
+
+        const cleanup = (result) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('.confirm-modal-cancel').onclick = () => cleanup(null);
+        overlay.querySelector('.confirm-modal-confirm').onclick = () => cleanup(input.value);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') cleanup(input.value);
+            if (e.key === 'Escape') cleanup(null);
+        });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
+    });
+}
+
+// ── SPENDING PACE RING ────────────────────────────────────
+// A small circular progress ring (like a watch activity ring) instead of a
+// flat text pill — shows at a glance how far through the month's budget
+// you are, color-coded the same green/yellow/red as before.
+
+function renderPaceRing(pace) {
+    const wrap = document.getElementById('pace-badge-wrap');
+    if (!wrap) return;
+
+    if (!pace) {
+        wrap.style.display = 'none';
+        return;
+    }
+
+    const pct = Math.min(100, Math.max(0, pace.percentSpent || 0));
+    const radius = 16;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference * (1 - pct / 100);
+    const colorVar = pace.status === 'red' ? '--danger' : pace.status === 'yellow' ? '--warning' : '--success';
+    const color = getComputedStyle(document.documentElement).getPropertyValue(colorVar).trim();
+    const labels = { green: 'On pace', yellow: 'Ahead', red: 'Over' };
+
+    wrap.innerHTML = `
+        <span class="brief-stat-label">Spending Pace</span>
+        <div class="pace-ring-wrap" title="$${formatCurrency(pace.spent)} spent of $${formatCurrency(pace.limit)} — day ${pace.dayOfMonth} of ${pace.daysInMonth}">
+            <svg width="40" height="40" viewBox="0 0 40 40">
+                <circle cx="20" cy="20" r="${radius}" fill="none" stroke="var(--border)" stroke-width="4"></circle>
+                <circle cx="20" cy="20" r="${radius}" fill="none" stroke="${color}" stroke-width="4"
+                    stroke-dasharray="${circumference.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"
+                    stroke-linecap="round" transform="rotate(-90 20 20)"></circle>
+            </svg>
+            <span class="pace-ring-label" style="color:${color};">${labels[pace.status] || pace.status}</span>
+        </div>
+    `;
+    wrap.style.display = 'flex';
+}
+
+// ── GETTING STARTED CHECKLIST ────────────────────────────
+// Stays visible on the dashboard (unlike the one-time onboarding slides)
+// until a new account has added at least one account, bill, and goal —
+// so someone who stops halfway through setup still sees what's left.
+
+function renderGettingStarted(data) {
+    const card = document.getElementById('getting-started-card');
+    const list = document.getElementById('getting-started-list');
+    if (!card || !list) return;
+
+    const steps = [
+        { done: !!data.hasAccounts, label: 'Add an account (checking, savings, etc.)' },
+        { done: !!data.hasBills, label: 'Add a recurring bill' },
+        { done: !!data.hasGoals, label: 'Set a goal or daily task' }
+    ];
+    const doneCount = steps.filter(s => s.done).length;
+
+    if (doneCount === steps.length) {
+        card.style.display = 'none';
+        return;
+    }
+
+    list.innerHTML = `
+        <div class="getting-started-progress">${doneCount} of ${steps.length} done</div>
+        ${steps.map(s => `
+            <div class="getting-started-row ${s.done ? 'done' : ''}">
+                <span class="getting-started-check">${s.done ? '✅' : '⬜'}</span>
+                <span>${s.label}</span>
+            </div>
+        `).join('')}
+    `;
+    card.style.display = 'block';
+}
+
 // ── SETTINGS DROPDOWN (gear menu) ───────────────────────
 
 function toggleSettingsMenu() {
@@ -85,9 +313,11 @@ async function updateNotifyBtnState() {
     const item = document.getElementById('notify-toggle-item');
     const icon = document.getElementById('notify-toggle-icon');
     const label = document.getElementById('notify-toggle-label');
+    const testItem = document.getElementById('notify-test-item');
     if (!item || !icon || !label) return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         item.style.display = 'none';
+        if (testItem) testItem.style.display = 'none';
         return;
     }
     try {
@@ -95,15 +325,65 @@ async function updateNotifyBtnState() {
         const sub = reg ? await reg.pushManager.getSubscription() : null;
         icon.textContent = sub ? '🔔' : '🔕';
         label.textContent = sub ? 'Notifications On' : 'Notifications Off';
+        // The "Send Test Notification" option only makes sense once
+        // notifications are actually turned on for this device.
+        if (testItem) testItem.style.display = sub ? 'flex' : 'none';
     } catch (error) {
         icon.textContent = '🔕';
         label.textContent = 'Notifications Off';
+        if (testItem) testItem.style.display = 'none';
+    }
+}
+
+async function promptMonthlyBudget() {
+    const current = await fetch('/api/auth/me').then(r => r.json()).catch(() => null);
+    const existing = current && current.user && current.user.monthlyBudgetLimit;
+    const input = await promptModal(
+        'Set a monthly spending limit to see a pace badge on your dashboard (how your spending compares to how far into the month you are). Leave blank to turn it off.',
+        existing ? String(existing) : ''
+    );
+    if (input === null) return; // cancelled
+
+    const trimmed = input.trim();
+    const value = trimmed === '' ? null : parseFloat(trimmed);
+    if (trimmed !== '' && (!Number.isFinite(value) || value < 0)) {
+        showToast('Please enter a positive number, or leave it blank to turn the pace badge off.');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/settings/budget-limit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monthlyBudgetLimit: value })
+        });
+        if (!res.ok) {
+            showToast('Could not save your monthly budget.');
+            return;
+        }
+        loadDashboard();
+    } catch (error) {
+        showToast('Could not reach the server to save your monthly budget.');
+    }
+}
+
+async function sendTestNotification() {
+    try {
+        const res = await fetch('/api/push/test', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.error || 'Could not send a test notification.');
+            return;
+        }
+        showToast('Test notification sent! It should arrive within a few seconds — check your notification shade if this tab isn\'t in the foreground.', 'success');
+    } catch (error) {
+        showToast('Could not reach the server to send a test notification.');
     }
 }
 
 async function toggleNotifications() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        alert('Push notifications are not supported in this browser.');
+        showToast('Push notifications are not supported in this browser.');
         return;
     }
     try {
@@ -123,13 +403,13 @@ async function toggleNotifications() {
 
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            alert("Notifications were blocked. You can turn them back on in your browser's site settings.");
+            showToast("Notifications were blocked. You can turn them back on in your browser's site settings.");
             return;
         }
 
         const keyData = await fetch('/api/push/vapid-public-key').then(r => r.json());
         if (!keyData.publicKey) {
-            alert('Notifications are not set up on the server yet.');
+            showToast('Notifications are not set up on the server yet.');
             return;
         }
 
@@ -147,7 +427,7 @@ async function toggleNotifications() {
         updateNotifyBtnState();
     } catch (error) {
         console.error('Notification setup error:', error);
-        alert('Something went wrong turning on notifications.');
+        showToast('Something went wrong turning on notifications.');
     }
 }
 
@@ -177,8 +457,85 @@ async function checkAuth() {
         // Only load dashboard data once we know the user is logged in
         loadDashboard();
         loadMorningBrief();
+
+        if (data.user && !data.user.onboarded) {
+            startOnboarding();
+        }
     } catch (error) {
         window.location.href = '/login.html';
+    }
+}
+
+// ── FIRST-TIME ONBOARDING ────────────────────────────────
+
+const onboardingSlides = [
+    {
+        icon: '👋',
+        title: 'Welcome to Morning Command Center',
+        body: 'This is your personal home base — your money, bills, goals, and daily plan, all in one place. Here\'s a quick tour of the essentials.'
+    },
+    {
+        icon: '☀️',
+        title: 'Your Morning Brief',
+        body: 'Every day, the dashboard gives you an honest snapshot of your finances, your top priorities, and anything urgent — generated fresh each time you ask.'
+    },
+    {
+        icon: '💰',
+        title: 'Money, Bills & Goals',
+        body: 'Track every account and card in Money, never miss a due date in Bills, and set goals with real dollar targets you can assign leftover balance toward.'
+    },
+    {
+        icon: '📅',
+        title: 'Your Planner & Calendar',
+        body: 'Daily tasks, weekly reviews, and monthly reflections live in the Calendar and Planner tabs — built for the same kind of planning you\'d do on paper.'
+    },
+    {
+        icon: '🚀',
+        title: 'You\'re all set',
+        body: 'Explore at your own pace — everything here adjusts to what you add. Let\'s get started.'
+    }
+];
+let onboardingIndex = 0;
+
+function startOnboarding() {
+    onboardingIndex = 0;
+    renderOnboardingSlide();
+    document.getElementById('onboarding-overlay').style.display = 'flex';
+}
+
+function renderOnboardingSlide() {
+    const slide = onboardingSlides[onboardingIndex];
+    const slideEl = document.getElementById('onboarding-slide');
+    slideEl.innerHTML = `
+        <div class="onboarding-slide-icon">${slide.icon}</div>
+        <div class="onboarding-slide-title">${slide.title}</div>
+        <div class="onboarding-slide-body">${slide.body}</div>
+    `;
+
+    const dotsEl = document.getElementById('onboarding-dots');
+    dotsEl.innerHTML = onboardingSlides.map((_, i) =>
+        `<div class="onboarding-dot ${i === onboardingIndex ? 'active' : ''}"></div>`
+    ).join('');
+
+    const nextBtn = document.getElementById('onboarding-next-btn');
+    nextBtn.textContent = onboardingIndex === onboardingSlides.length - 1 ? 'Get Started' : 'Next';
+}
+
+function onboardingNext() {
+    if (onboardingIndex >= onboardingSlides.length - 1) {
+        finishOnboarding();
+        return;
+    }
+    onboardingIndex++;
+    renderOnboardingSlide();
+}
+
+async function finishOnboarding() {
+    document.getElementById('onboarding-overlay').style.display = 'none';
+    try {
+        await fetch('/api/onboarding/complete', { method: 'POST' });
+    } catch (error) {
+        // non-critical — worst case they see the walkthrough again next login
     }
 }
 
@@ -347,7 +704,7 @@ async function addCalendarTask() {
     const textInput = document.getElementById('calendar-task-text');
     const taskText = textInput.value;
     const time = document.getElementById('calendar-task-time').value; // "" if not set
-    if (!taskText.trim()) { alert('Please enter a task.'); return; }
+    if (!taskText.trim()) { showToast('Please enter a task.'); return; }
 
     const isRepeating = document.getElementById('calendar-repeat-check').checked;
 
@@ -355,8 +712,8 @@ async function addCalendarTask() {
         const weekdayBoxes = document.querySelectorAll('.calendar-weekday-picker input[type="checkbox"]:checked');
         const weekdays = Array.from(weekdayBoxes).map(cb => parseInt(cb.value, 10));
         const until = document.getElementById('calendar-repeat-until').value;
-        if (weekdays.length === 0) { alert('Pick at least one day of the week to repeat on.'); return; }
-        if (!until) { alert('Pick a date to repeat until.'); return; }
+        if (weekdays.length === 0) { showToast('Pick at least one day of the week to repeat on.'); return; }
+        if (!until) { showToast('Pick a date to repeat until.'); return; }
         try {
             const res = await fetch('/api/tasks/recurring', {
                 method: 'POST',
@@ -364,9 +721,9 @@ async function addCalendarTask() {
                 body: JSON.stringify({ taskText, time: time || null, startDate: calendarSelectedDate, endDate: until, weekdays })
             });
             const data = await res.json();
-            if (!res.ok) { alert(data.error || 'Failed to add recurring task.'); return; }
+            if (!res.ok) { showToast(data.error || "Couldn't add recurring task — give it another try."); return; }
         } catch (error) {
-            alert('Failed to add recurring task.');
+            showToast("Couldn't add recurring task — give it another try.");
             return;
         }
     } else {
@@ -377,7 +734,7 @@ async function addCalendarTask() {
                 body: JSON.stringify({ date: calendarSelectedDate, taskText, time: time || null, source: 'manual' })
             });
         } catch (error) {
-            alert('Failed to add task.');
+            showToast("Couldn't add task — give it another try.");
             return;
         }
     }
@@ -396,7 +753,7 @@ async function toggleCalendarTask(id) {
         await fetch(`/api/tasks/${id}/toggle`, { method: 'POST' });
         loadCalendar();
     } catch (error) {
-        alert('Failed to update task.');
+        showToast("Couldn't update task — give it another try.");
     }
 }
 
@@ -405,7 +762,7 @@ async function removeCalendarTask(id) {
         await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
         loadCalendar();
     } catch (error) {
-        alert('Failed to remove task.');
+        showToast("Couldn't remove task — give it another try.");
     }
 }
 
@@ -420,8 +777,76 @@ async function loadDashboard() {
         const statsEl = document.getElementById('brief-stats');
         const balanceEl = document.getElementById('brief-stat-balance');
         if (statsEl && balanceEl) {
-            balanceEl.textContent = `$${data.totalBalance.toFixed(2)}`;
+            animateDollarValue(balanceEl, lastShownBalance, data.totalBalance);
+            lastShownBalance = data.totalBalance;
             statsEl.style.display = 'flex';
+        }
+
+        // "Unassigned" — total balance minus whatever's already earmarked
+        // toward a goal's dollar target (YNAB-style: give leftover money a job).
+        const unassignedEl = document.getElementById('brief-stat-unassigned');
+        if (unassignedEl && typeof data.unassignedBalance === 'number') {
+            animateDollarValue(unassignedEl, lastShownUnassigned, data.unassignedBalance);
+            lastShownUnassigned = data.unassignedBalance;
+        }
+
+        // Small 14-day balance trend chart, drawn above the stats row.
+        renderBalanceSparkline(data.balanceHistory);
+
+        // Trend arrow — compares today's balance to roughly a week ago.
+        // Hidden entirely until there's enough history (getBalanceTrend
+        // returns null for a brand new account with no older snapshot yet).
+        const trendEl = document.getElementById('brief-stat-trend');
+        if (trendEl) {
+            if (data.balanceTrend) {
+                const t = data.balanceTrend;
+                const arrow = t.direction === 'up' ? '↑' : t.direction === 'down' ? '↓' : '→';
+                trendEl.className = `brief-stat-trend trend-${t.direction}`;
+                trendEl.textContent = t.direction === 'flat'
+                    ? `No change over ${t.days} day${t.days === 1 ? '' : 's'}`
+                    : `${arrow} $${formatCurrency(t.amount)} over ${t.days} day${t.days === 1 ? '' : 's'}`;
+                trendEl.style.display = 'block';
+            } else {
+                trendEl.style.display = 'none';
+            }
+        }
+
+        // Spending pace ring — only shows once the user has set a monthly
+        // budget limit (via the gear menu). Green/yellow/red based on how
+        // this month's spending compares to how far into the month we are.
+        renderPaceRing(data.budgetPace);
+
+        // Getting-started checklist — stays visible until an account, a
+        // bill, and a goal have all been added at least once.
+        renderGettingStarted(data);
+
+        // Unified AI presence: the same pace/trend signals shown on the
+        // dashboard also get a small callout on the Budget and Goals tabs,
+        // so the insight follows you instead of living in only one place.
+        const budgetCallout = document.getElementById('budget-insight-callout');
+        if (budgetCallout) {
+            if (data.budgetPace) {
+                const p = data.budgetPace;
+                const msgs = {
+                    green: `You're on pace with your $${formatCurrency(p.limit)} monthly budget — $${formatCurrency(p.spent)} spent so far.`,
+                    yellow: `You're a bit ahead of pace on your $${formatCurrency(p.limit)} monthly budget — $${formatCurrency(p.spent)} spent by day ${p.dayOfMonth}.`,
+                    red: `You're running over pace on your $${formatCurrency(p.limit)} monthly budget — $${formatCurrency(p.spent)} spent by day ${p.dayOfMonth}.`
+                };
+                budgetCallout.innerHTML = `<span class="ai-insight-callout-icon">${p.status === 'red' ? '⚠️' : '💡'}</span><span>${msgs[p.status]}</span>`;
+                budgetCallout.style.display = 'flex';
+            } else {
+                budgetCallout.style.display = 'none';
+            }
+        }
+
+        const goalsCallout = document.getElementById('goals-insight-callout');
+        if (goalsCallout) {
+            if (typeof data.unassignedBalance === 'number' && data.unassignedBalance > 0.005) {
+                goalsCallout.innerHTML = `<span class="ai-insight-callout-icon">💡</span><span>You have $${formatCurrency(data.unassignedBalance)} unassigned — give it a job by setting a dollar target on a goal below.</span>`;
+                goalsCallout.style.display = 'flex';
+            } else {
+                goalsCallout.style.display = 'none';
+            }
         }
 
         // Bills due soon
@@ -436,7 +861,7 @@ async function loadDashboard() {
                         <div class="dash-bill-due">Due: ${b.dueDate} of the month</div>
                         ${b.lastPaid ? `<div class="dash-bill-paid">✓ Paid</div>` : ''}
                     </div>
-                    <div class="dash-bill-amount">$${b.amount.toFixed(2)}</div>
+                    <div class="dash-bill-amount">$${formatCurrency(b.amount)}</div>
                 </div>
             `).join('');
         }
@@ -535,17 +960,46 @@ async function loadMorningBrief() {
         text.innerHTML = renderBriefHtml(data.brief || '');
         loading.style.display = 'none';
         content.style.display = 'block';
+
+        const freshnessEl = document.getElementById('brief-freshness');
+        if (freshnessEl) {
+            const now = new Date();
+            freshnessEl.textContent = `As of ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+        }
     } catch (error) {
-        loading.innerHTML = '<div style="color:#ff6b6b;font-size:0.85rem;">Failed to load brief. Check your connection.</div>';
+        loading.innerHTML = '<div style="color:#ff6b6b;font-size:0.85rem;">Couldn\'t load your morning brief — check your connection and refresh.</div>';
     }
+}
+
+// ── CELEBRATION MICRO-INTERACTIONS ──────────────────────
+
+// A small, self-dismissing toast for the little wins — completing a goal,
+// paying off a bill — so those moments feel like something instead of
+// just quietly updating a list. Pure CSS animation, no dependencies.
+function celebrate(message) {
+    const container = document.getElementById('celebration-container') || (() => {
+        const el = document.createElement('div');
+        el.id = 'celebration-container';
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    const toast = document.createElement('div');
+    toast.className = 'celebration-toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    setTimeout(() => toast.classList.add('celebration-toast-out'), 1800);
+    setTimeout(() => toast.remove(), 2200);
 }
 
 async function completeGoalDash(id) {
     try {
         await fetch(`/api/goals/${id}/complete`, { method: 'POST' });
         loadDashboard();
+        celebrate('🎉 Nice work — goal complete!');
     } catch (error) {
-        alert('Failed to complete goal.');
+        showToast("Couldn't complete goal — give it another try.");
     }
 }
 
@@ -554,7 +1008,7 @@ async function uncompleteGoalDash(id) {
         await fetch(`/api/goals/${id}/uncomplete`, { method: 'POST' });
         loadDashboard();
     } catch (error) {
-        alert('Failed to uncomplete goal.');
+        showToast("Couldn't uncomplete goal — give it another try.");
     }
 }
 
@@ -597,6 +1051,7 @@ async function loadGoals() {
                         ${g.notes ? `<div class="goal-meta" style="margin-top:3px;">${g.notes}</div>` : ''}
                         ${g.whyIWantIt ? `<div class="goal-why">💭 ${g.whyIWantIt}</div>` : ''}
                         ${g.reward ? `<div class="goal-reward">🎁 Reward: ${g.reward}</div>` : ''}
+                        ${g.targetAmount ? renderGoalMoneyProgress(g) : ''}
                         ${renderActionSteps(g)}
                     </div>
                     <div class="bill-actions">
@@ -605,6 +1060,7 @@ async function loadGoals() {
                             style="${isCompleted ? 'border-color:#1F7A3C;color:#1F7A3C;' : ''}">
                             ${isCompleted ? '✓ Done' : 'Mark Done'}
                         </button>
+                        ${g.targetAmount ? `<button class="btn-small" onclick="assignToGoal('${g.id}', ${g.savedAmount || 0}, ${g.targetAmount})">Assign $</button>` : ''}
                         <button class="btn-danger" onclick="removeGoal('${g.id}')">Remove</button>
                     </div>
                 </div>
@@ -612,7 +1068,7 @@ async function loadGoals() {
         }
         list.innerHTML = html;
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load goals.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load goals</div>Check your connection and try again</div>`;
     }
 }
 
@@ -624,22 +1080,69 @@ async function addGoal() {
     const notes = document.getElementById('goal-notes').value;
     const whyIWantIt = document.getElementById('goal-why').value;
     const reward = document.getElementById('goal-reward').value;
-    if (!title.trim()) { alert('Please enter a goal title.'); return; }
+    const targetAmount = document.getElementById('goal-target').value;
+    if (!title.trim()) { showToast('Please enter a goal title.'); return; }
     try {
         await fetch('/api/goals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, category, recurrence, deadline, notes, whyIWantIt, reward })
+            body: JSON.stringify({ title, category, recurrence, deadline, notes, whyIWantIt, reward, targetAmount })
         });
         document.getElementById('goal-title').value = '';
         document.getElementById('goal-deadline').value = '';
         document.getElementById('goal-notes').value = '';
         document.getElementById('goal-why').value = '';
         document.getElementById('goal-reward').value = '';
+        document.getElementById('goal-target').value = '';
         loadGoals();
     } catch (error) {
-        alert('Failed to add goal.');
+        showToast("Couldn't add goal — give it another try.");
     }
+}
+
+// Prompts for a dollar amount and moves it into (or, with a negative
+// number, back out of) a goal's saved-so-far total. Refreshes both the
+// Goals tab and the dashboard since "Unassigned" balance changes too.
+async function assignToGoal(goalId, currentSaved, targetAmount) {
+    const input = await promptModal(
+        `How much would you like to assign to this goal? (Currently $${formatCurrency(currentSaved)} of $${formatCurrency(targetAmount)}). Enter a negative number to move money back out.`,
+        ''
+    );
+    if (input === null) return;
+    const amount = parseFloat(input);
+    if (!Number.isFinite(amount) || amount === 0) {
+        showToast('Please enter a non-zero number.');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/goals/${goalId}/assign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount })
+        });
+        if (!res.ok) {
+            showToast('Could not update this goal.');
+            return;
+        }
+        loadGoals();
+        loadDashboard();
+    } catch (error) {
+        showToast('Could not reach the server.');
+    }
+}
+
+// Shows a small progress bar for a goal with a dollar target — e.g. saving
+// $500 toward something, with however much has been "assigned" so far.
+function renderGoalMoneyProgress(g) {
+    const saved = g.savedAmount || 0;
+    const target = g.targetAmount;
+    const pct = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+    return `
+        <div class="goal-money-progress">
+            <div class="goal-money-bar"><div class="goal-money-fill" style="width:${pct}%"></div></div>
+            <div class="goal-money-label">$${formatCurrency(saved)} of $${formatCurrency(target)} (${pct}%)</div>
+        </div>
+    `;
 }
 
 // ── GOAL ACTION STEPS ──────────────────────────────────
@@ -677,7 +1180,7 @@ async function addActionStep(goalId) {
         });
         loadGoals();
     } catch (error) {
-        alert('Failed to add step.');
+        showToast("Couldn't add step — give it another try.");
     }
 }
 
@@ -686,7 +1189,7 @@ async function toggleActionStep(goalId, stepId) {
         await fetch(`/api/goals/${goalId}/steps/${stepId}/toggle`, { method: 'POST' });
         loadGoals();
     } catch (error) {
-        alert('Failed to update step.');
+        showToast("Couldn't update step — give it another try.");
     }
 }
 
@@ -695,7 +1198,7 @@ async function removeActionStep(goalId, stepId) {
         await fetch(`/api/goals/${goalId}/steps/${stepId}`, { method: 'DELETE' });
         loadGoals();
     } catch (error) {
-        alert('Failed to remove step.');
+        showToast("Couldn't remove step — give it another try.");
     }
 }
 
@@ -704,8 +1207,9 @@ async function completeGoal(id) {
         await fetch(`/api/goals/${id}/complete`, { method: 'POST' });
         loadGoals();
         loadDashboard();
+        celebrate('🎉 Nice work — goal complete!');
     } catch (error) {
-        alert('Failed to complete goal.');
+        showToast("Couldn't complete goal — give it another try.");
     }
 }
 
@@ -715,17 +1219,17 @@ async function uncompleteGoal(id) {
         loadGoals();
         loadDashboard();
     } catch (error) {
-        alert('Failed to uncomplete goal.');
+        showToast("Couldn't uncomplete goal — give it another try.");
     }
 }
 
 async function removeGoal(id) {
-    if (!confirm('Remove this goal?')) return;
+    if (!(await confirmAction('Remove this goal?'))) return;
     try {
         await fetch(`/api/goals/${id}`, { method: 'DELETE' });
         loadGoals();
     } catch (error) {
-        alert('Failed to remove goal.');
+        showToast("Couldn't remove goal — give it another try.");
     }
 }
 
@@ -757,7 +1261,7 @@ async function loadWeeklyReviews() {
             </div>
         `).join('');
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load reviews.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load reviews</div>Check your connection and try again</div>`;
     }
 }
 
@@ -776,7 +1280,7 @@ async function saveWeeklyReview() {
     const mainGoal = document.getElementById('review-main-goal').value;
     const wins = document.getElementById('review-wins').value;
     const improveNextWeek = document.getElementById('review-improve').value;
-    if (!weekStart) { alert('Please choose the week start date.'); return; }
+    if (!weekStart) { showToast('Please choose the week start date.'); return; }
     try {
         await fetch('/api/weekly-reviews', {
             method: 'POST',
@@ -789,17 +1293,17 @@ async function saveWeeklyReview() {
         document.getElementById('review-week-start').value = getMondayOfThisWeek();
         loadWeeklyReviews();
     } catch (error) {
-        alert('Failed to save weekly review.');
+        showToast("Couldn't save weekly review — give it another try.");
     }
 }
 
 async function removeWeeklyReview(id) {
-    if (!confirm('Remove this weekly review?')) return;
+    if (!(await confirmAction('Remove this weekly review?'))) return;
     try {
         await fetch('/api/weekly-reviews/' + id, { method: 'DELETE' });
         loadWeeklyReviews();
     } catch (error) {
-        alert('Failed to remove weekly review.');
+        showToast("Couldn't remove weekly review — give it another try.");
     }
 }
 
@@ -811,8 +1315,8 @@ async function loadRituals() {
         renderRitualList('morning', tasks.filter(t => t.source === 'ritual-morning'));
         renderRitualList('evening', tasks.filter(t => t.source === 'ritual-evening'));
     } catch (error) {
-        document.getElementById('ritual-morning-list').innerHTML = `<div class="empty-state">Failed to load.</div>`;
-        document.getElementById('ritual-evening-list').innerHTML = `<div class="empty-state">Failed to load.</div>`;
+        document.getElementById('ritual-morning-list').innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load</div>Check your connection and try again</div>`;
+        document.getElementById('ritual-evening-list').innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load</div>Check your connection and try again</div>`;
     }
     loadDailyReflection();
 }
@@ -845,7 +1349,7 @@ async function addRitualItem(period) {
         input.value = '';
         loadRituals();
     } catch (error) {
-        alert('Failed to add item.');
+        showToast("Couldn't add item — give it another try.");
     }
 }
 
@@ -854,7 +1358,7 @@ async function toggleRitualItem(id) {
         await fetch(`/api/tasks/${id}/toggle`, { method: 'POST' });
         loadRituals();
     } catch (error) {
-        alert('Failed to update item.');
+        showToast("Couldn't update item — give it another try.");
     }
 }
 
@@ -863,7 +1367,7 @@ async function removeRitualItem(id) {
         await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
         loadRituals();
     } catch (error) {
-        alert('Failed to remove item.');
+        showToast("Couldn't remove item — give it another try.");
     }
 }
 
@@ -891,7 +1395,7 @@ async function saveDailyReflection() {
         btn.textContent = 'Saved ✓';
         setTimeout(() => { btn.textContent = original; }, 1500);
     } catch (error) {
-        alert('Failed to save.');
+        showToast("Couldn't save — give it another try.");
     }
 }
 
@@ -993,7 +1497,7 @@ async function loadMonthlyReflections() {
             </div>
         `).join('');
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load reflections.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load reflections</div>Check your connection and try again</div>`;
     }
 }
 
@@ -1011,7 +1515,7 @@ function editMonthlyReflection(id) {
 
 async function saveMonthlyReflection() {
     const month = document.getElementById('monthly-month').value;
-    if (!month) { alert('Please choose a month.'); return; }
+    if (!month) { showToast('Please choose a month.'); return; }
     const body = { month, notes: document.getElementById('monthly-notes').value };
     WHEEL_CATEGORIES.forEach(c => {
         body[c.key] = document.getElementById(`wheel-${c.key}`).value;
@@ -1024,17 +1528,17 @@ async function saveMonthlyReflection() {
         });
         loadMonthlyReflections();
     } catch (error) {
-        alert('Failed to save reflection.');
+        showToast("Couldn't save reflection — give it another try.");
     }
 }
 
 async function removeMonthlyReflection(id) {
-    if (!confirm('Remove this reflection?')) return;
+    if (!(await confirmAction('Remove this reflection?'))) return;
     try {
         await fetch('/api/monthly-reflections/' + id, { method: 'DELETE' });
         loadMonthlyReflections();
     } catch (error) {
-        alert('Failed to remove reflection.');
+        showToast("Couldn't remove reflection — give it another try.");
     }
 }
 
@@ -1043,7 +1547,7 @@ async function removeMonthlyReflection(id) {
 async function getBudget() {
     const amount = document.getElementById('paycheck-amount').value;
     const date = document.getElementById('paycheck-date').value;
-    if (!amount || !date) { alert('Please enter your paycheck amount and date.'); return; }
+    if (!amount || !date) { showToast('Please enter your paycheck amount and date.'); return; }
     const btn = event.target;
     const result = document.getElementById('budget-result');
     btn.disabled = true;
@@ -1068,6 +1572,38 @@ async function getBudget() {
 
 // ── BILLS ──────────────────────────────────────────────
 
+// Remembers past bills/expenses so the add-forms can suggest and autofill
+// from what's already been entered — no need to retype an amount for a
+// bill you pay every month.
+let cachedBillsForAutofill = [];
+let cachedExpensesForAutofill = [];
+
+function autofillBillAmount() {
+    const nameInput = document.getElementById('bill-name');
+    const amountInput = document.getElementById('bill-amount');
+    if (!nameInput || !amountInput) return;
+    const typed = nameInput.value.trim().toLowerCase();
+    if (!typed) return;
+    const match = cachedBillsForAutofill.find(b => b.name.toLowerCase() === typed);
+    if (match) {
+        amountInput.value = match.amount;
+    }
+}
+
+function autofillExpenseFields() {
+    const descInput = document.getElementById('expense-description');
+    const amountInput = document.getElementById('expense-amount');
+    const categorySelect = document.getElementById('expense-category');
+    if (!descInput) return;
+    const typed = descInput.value.trim().toLowerCase();
+    if (!typed) return;
+    const match = cachedExpensesForAutofill.find(e => (e.description || '').toLowerCase() === typed);
+    if (match) {
+        if (amountInput) amountInput.value = match.amount;
+        if (categorySelect && match.category) categorySelect.value = match.category;
+    }
+}
+
 async function loadBills() {
     const list = document.getElementById('bills-list');
     list.innerHTML = '<p class="loading" style="padding:16px 0;">Loading bills...</p>';
@@ -1075,16 +1611,24 @@ async function loadBills() {
         const accounts = await fetch('/api/accounts').then(r => r.json());
         const cards = await fetch('/api/creditcards').then(r => r.json());
         const bills = await fetch('/api/bills').then(r => r.json());
+
+        cachedBillsForAutofill = bills;
+        const billNameList = document.getElementById('bill-name-suggestions');
+        if (billNameList) {
+            const uniqueNames = [...new Set(bills.map(b => b.name))];
+            billNameList.innerHTML = uniqueNames.map(n => `<option value="${n}"></option>`).join('');
+        }
+
         if (bills.length === 0) {
             list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">📋</span><div class="empty-state-title">No bills yet</div>Add your first bill above to get started</div>`;
             return;
         }
         const accountOptions = [
             '<optgroup label="Bank Accounts">',
-            ...accounts.map(a => `<option value="${a.id}" data-balance="${a.balance}" data-name="${a.name}">${a.name} ($${a.balance.toFixed(2)})</option>`),
+            ...accounts.map(a => `<option value="${a.id}" data-balance="${a.balance}" data-name="${a.name}">${a.name} ($${formatCurrency(a.balance)})</option>`),
             '</optgroup>',
             '<optgroup label="Credit Cards">',
-            ...cards.map(c => `<option value="${c.id}" data-balance="${(c.limit - c.balance)}" data-name="${c.name}">${c.name} (Available: $${(c.limit - c.balance).toFixed(2)})</option>`),
+            ...cards.map(c => `<option value="${c.id}" data-balance="${(c.limit - c.balance)}" data-name="${c.name}">${c.name} (Available: $${formatCurrency((c.limit - c.balance))})</option>`),
             '</optgroup>'
         ].join('');
         list.innerHTML = bills.map(bill => {
@@ -1097,7 +1641,7 @@ async function loadBills() {
                     ${isPaid ? `<div class="bill-paid-label">✓ Paid on ${bill.lastPaid}</div>` : ''}
                 </div>
                 <div class="bill-actions">
-                    <span class="bill-amount">$${bill.amount.toFixed(2)}</span>
+                    <span class="bill-amount">$${formatCurrency(bill.amount)}</span>
                     ${!isPaid ? `
                         <select class="inline-select" id="account-for-${bill.id}">
                             <option value="">Pay from...</option>
@@ -1112,7 +1656,7 @@ async function loadBills() {
             </div>
         `}).join('');
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load bills.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load bills</div>Check your connection and try again</div>`;
     }
 }
 
@@ -1122,7 +1666,7 @@ async function addBill() {
     const dueDate = document.getElementById('bill-due').value;
     const type = document.getElementById('bill-type').value;
     const frequency = document.getElementById('bill-frequency').value;
-    if (!name || !amount || !dueDate) { alert('Please fill in the bill name, amount, and due date.'); return; }
+    if (!name || !amount || !dueDate) { showToast('Please fill in the bill name, amount, and due date.'); return; }
     try {
         await fetch('/api/bills', {
             method: 'POST',
@@ -1134,7 +1678,7 @@ async function addBill() {
         document.getElementById('bill-due').value = '';
         loadBills();
     } catch (error) {
-        alert('Failed to add bill.');
+        showToast("Couldn't add bill — give it another try.");
     }
 }
 
@@ -1143,10 +1687,10 @@ async function payBill(id, name, amount) {
     const accountId = select.value;
     const accountName = select.options[select.selectedIndex]?.dataset?.name;
     const currentBalance = parseFloat(select.options[select.selectedIndex]?.dataset?.balance || 0);
-    if (!accountId) { alert('Please select which account or card to pay this bill from.'); return; }
+    if (!accountId) { showToast('Please select which account or card to pay this bill from.'); return; }
     const newBalance = (currentBalance - amount).toFixed(2);
     if (newBalance < 0) {
-        if (!confirm(`Warning: This will overdraft ${accountName} by $${Math.abs(newBalance)}. Continue?`)) return;
+        if (!(await confirmAction(`Warning: This will overdraft ${accountName} by $${formatCurrency(Math.abs(newBalance))}. Continue?`))) return;
     }
     try {
         await fetch(`/api/bills/${id}/pay`, {
@@ -1156,29 +1700,30 @@ async function payBill(id, name, amount) {
         });
         loadBills();
         loadDashboard();
+        celebrate(`✅ ${name} paid`);
     } catch (error) {
-        alert('Failed to mark bill as paid.');
+        showToast("Couldn't mark bill as paid — give it another try.");
     }
 }
 
 async function unpayBill(id) {
-    if (!confirm('Unmark this bill as paid? The amount will be returned to the account it was paid from.')) return;
+    if (!(await confirmAction('Unmark this bill as paid? The amount will be returned to the account it was paid from.'))) return;
     try {
         await fetch(`/api/bills/${id}/unpay`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
         loadBills();
         loadDashboard();
     } catch (error) {
-        alert('Failed to unmark bill.');
+        showToast("Couldn't unmark bill — give it another try.");
     }
 }
 
 async function removeBill(id) {
-    if (!confirm('Remove this bill?')) return;
+    if (!(await confirmAction('Remove this bill?'))) return;
     try {
         await fetch('/api/bills/' + id, { method: 'DELETE' });
         loadBills();
     } catch (error) {
-        alert('Failed to remove bill.');
+        showToast("Couldn't remove bill — give it another try.");
     }
 }
 
@@ -1201,7 +1746,7 @@ async function loadAccounts() {
                     <div class="bill-details">${a.type} · ${a.allocation}% of paycheck${a.notes ? ' · ' + a.notes : ''}</div>
                 </div>
                 <div class="bill-actions">
-                    <span class="bill-amount">$${a.balance.toFixed(2)}</span>
+                    <span class="bill-amount">$${formatCurrency(a.balance)}</span>
                     <input type="number" placeholder="New balance" class="inline-input" id="bal-${a.id}">
                     <button class="btn-small" onclick="updateBalance('${a.id}')">Update</button>
                     <button class="btn-danger" onclick="removeAccount('${a.id}')">Remove</button>
@@ -1209,7 +1754,7 @@ async function loadAccounts() {
             </div>
         `).join('');
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load accounts.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load accounts</div>Check your connection and try again</div>`;
     }
 }
 
@@ -1219,7 +1764,7 @@ async function addAccount() {
     const balance = document.getElementById('account-balance').value;
     const allocation = document.getElementById('account-allocation').value;
     const notes = document.getElementById('account-notes').value;
-    if (!name || !balance) { alert('Please enter the account name and current balance.'); return; }
+    if (!name || !balance) { showToast('Please enter the account name and current balance.'); return; }
     try {
         await fetch('/api/accounts', {
             method: 'POST',
@@ -1232,14 +1777,14 @@ async function addAccount() {
         document.getElementById('account-notes').value = '';
         loadAccounts();
     } catch (error) {
-        alert('Failed to add account.');
+        showToast("Couldn't add account — give it another try.");
     }
 }
 
 async function updateBalance(id) {
     const input = document.getElementById('bal-' + id);
     const newBalance = input.value;
-    if (!newBalance) { alert('Please enter a new balance.'); return; }
+    if (!newBalance) { showToast('Please enter a new balance.'); return; }
     try {
         await fetch('/api/accounts/' + id, {
             method: 'PUT',
@@ -1249,18 +1794,18 @@ async function updateBalance(id) {
         loadAccounts();
         loadDashboard();
     } catch (error) {
-        alert('Failed to update balance.');
+        showToast("Couldn't update balance — give it another try.");
     }
 }
 
 async function removeAccount(id) {
-    if (!confirm('Remove this account?')) return;
+    if (!(await confirmAction('Remove this account?'))) return;
     try {
         await fetch('/api/accounts/' + id, { method: 'DELETE' });
         loadAccounts();
         loadDashboard();
     } catch (error) {
-        alert('Failed to remove account.');
+        showToast("Couldn't remove account — give it another try.");
     }
 }
 
@@ -1283,11 +1828,11 @@ async function loadCards() {
             <div class="bill-item">
                 <div class="bill-info">
                     <div class="bill-name">${c.name}</div>
-                    <div class="bill-details">Used for: ${c.purpose} · Paid from: ${c.linkedAccount} · Limit: $${c.limit.toFixed(2)}</div>
+                    <div class="bill-details">Used for: ${c.purpose} · Paid from: ${c.linkedAccount} · Limit: $${formatCurrency(c.limit)}</div>
                     <div class="bill-details" style="color:${color}">Utilization: ${util}%</div>
                 </div>
                 <div class="bill-actions">
-                    <span class="bill-amount" style="color:#ff6b6b;">$${c.balance.toFixed(2)}</span>
+                    <span class="bill-amount" style="color:#ff6b6b;">$${formatCurrency(c.balance)}</span>
                     <input type="number" placeholder="New balance" class="inline-input" id="card-bal-${c.id}">
                     <button class="btn-small" onclick="updateCardBalance('${c.id}')">Update</button>
                     <button class="btn-danger" onclick="removeCard('${c.id}')">Remove</button>
@@ -1295,7 +1840,7 @@ async function loadCards() {
             </div>
         `}).join('');
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load cards.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load cards</div>Check your connection and try again</div>`;
     }
 }
 
@@ -1305,7 +1850,7 @@ async function addCard() {
     const limit = document.getElementById('card-limit').value;
     const purpose = document.getElementById('card-purpose').value;
     const linkedAccount = document.getElementById('card-linked').value;
-    if (!name || !balance || !limit) { alert('Please enter the card name, balance, and limit.'); return; }
+    if (!name || !balance || !limit) { showToast('Please enter the card name, balance, and limit.'); return; }
     try {
         await fetch('/api/creditcards', {
             method: 'POST',
@@ -1320,14 +1865,14 @@ async function addCard() {
         loadCards();
         loadDashboard();
     } catch (error) {
-        alert('Failed to add card.');
+        showToast("Couldn't add card — give it another try.");
     }
 }
 
 async function updateCardBalance(id) {
     const input = document.getElementById('card-bal-' + id);
     const newBalance = input.value;
-    if (!newBalance) { alert('Please enter a new balance.'); return; }
+    if (!newBalance) { showToast('Please enter a new balance.'); return; }
     try {
         await fetch('/api/creditcards/' + id, {
             method: 'PUT',
@@ -1337,18 +1882,18 @@ async function updateCardBalance(id) {
         loadCards();
         loadDashboard();
     } catch (error) {
-        alert('Failed to update card balance.');
+        showToast("Couldn't update card balance — give it another try.");
     }
 }
 
 async function removeCard(id) {
-    if (!confirm('Remove this card?')) return;
+    if (!(await confirmAction('Remove this card?'))) return;
     try {
         await fetch('/api/creditcards/' + id, { method: 'DELETE' });
         loadCards();
         loadDashboard();
     } catch (error) {
-        alert('Failed to remove card.');
+        showToast("Couldn't remove card — give it another try.");
     }
 }
 
@@ -1359,6 +1904,14 @@ async function loadExpenses() {
     list.innerHTML = '<p class="loading" style="padding:16px 0;">Loading expenses...</p>';
     try {
         const expenses = await fetch('/api/expenses').then(r => r.json());
+
+        cachedExpensesForAutofill = expenses;
+        const expenseDescList = document.getElementById('expense-description-suggestions');
+        if (expenseDescList) {
+            const uniqueDescs = [...new Set(expenses.map(e => e.description).filter(Boolean))];
+            expenseDescList.innerHTML = uniqueDescs.map(d => `<option value="${d}"></option>`).join('');
+        }
+
         if (expenses.length === 0) {
             list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">🧾</span><div class="empty-state-title">No expenses yet</div>Log your first expense above</div>`;
             return;
@@ -1371,11 +1924,11 @@ async function loadExpenses() {
                     <div class="expense-desc">${exp.description}</div>
                     <div class="expense-date">${exp.date}</div>
                 </div>
-                <span class="expense-amount">-$${parseFloat(exp.amount).toFixed(2)}</span>
+                <span class="expense-amount">-$${formatCurrency(parseFloat(exp.amount))}</span>
             </div>
         `).join('');
     } catch (error) {
-        list.innerHTML = `<div class="empty-state">Failed to load expenses.</div>`;
+        list.innerHTML = `<div class="empty-state"><span class="empty-state-icon">⚠️</span><div class="empty-state-title">Couldn't load expenses</div>Check your connection and try again</div>`;
     }
 }
 
@@ -1384,7 +1937,7 @@ async function addExpense() {
     const description = document.getElementById('expense-description').value;
     const amount = document.getElementById('expense-amount').value;
     const date = document.getElementById('expense-date').value;
-    if (!description || !amount) { alert('Please enter a description and amount.'); return; }
+    if (!description || !amount) { showToast('Please enter a description and amount.'); return; }
     const result = document.getElementById('expense-result');
     try {
         await fetch('/api/expenses', {
@@ -1393,12 +1946,12 @@ async function addExpense() {
             body: JSON.stringify({ category, description, amount, date })
         });
         result.className = 'result visible';
-        result.textContent = `Logged $${parseFloat(amount).toFixed(2)} for ${description}.`;
+        result.textContent = `Logged $${formatCurrency(parseFloat(amount))} for ${description}.`;
         document.getElementById('expense-description').value = '';
         document.getElementById('expense-amount').value = '';
         loadExpenses();
     } catch (error) {
-        alert('Failed to log expense.');
+        showToast("Couldn't log expense — give it another try.");
     }
 }
 

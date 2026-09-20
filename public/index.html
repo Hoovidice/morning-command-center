@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Morning Command Center</title>
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0d1b2e">
+    <link rel="stylesheet" href="style.css?v=14">
     <style>
         .header-content {
             display: flex;
@@ -111,6 +116,18 @@
 </head>
 <body>
 
+    <!-- FIRST-TIME ONBOARDING OVERLAY -->
+    <div class="onboarding-overlay" id="onboarding-overlay" style="display:none;">
+        <div class="onboarding-card">
+            <div class="onboarding-slide" id="onboarding-slide"></div>
+            <div class="onboarding-dots" id="onboarding-dots"></div>
+            <div class="onboarding-actions">
+                <button class="onboarding-skip" onclick="finishOnboarding()">Skip</button>
+                <button class="btn" id="onboarding-next-btn" onclick="onboardingNext()">Next</button>
+            </div>
+        </div>
+    </div>
+
     <div class="header">
         <div class="header-content">
             <div>
@@ -130,6 +147,14 @@
                         <button class="settings-dropdown-item" id="notify-toggle-item" onclick="toggleNotifications()">
                             <span class="settings-item-icon" id="notify-toggle-icon"></span>
                             <span id="notify-toggle-label"></span>
+                        </button>
+                        <button class="settings-dropdown-item" id="notify-test-item" onclick="sendTestNotification()" style="display:none;">
+                            <span class="settings-item-icon">🧪</span>
+                            <span>Send Test Notification</span>
+                        </button>
+                        <button class="settings-dropdown-item" onclick="promptMonthlyBudget()">
+                            <span class="settings-item-icon">🎯</span>
+                            <span>Set Monthly Budget</span>
                         </button>
                     </div>
                 </div>
@@ -166,10 +191,24 @@
         <div class="brief-panel" id="brief-panel">
             <div class="brief-greeting" id="brief-greeting"></div>
 
+            <div class="balance-sparkline-wrap" id="balance-sparkline-wrap" style="display:none;">
+                <svg class="balance-sparkline" id="balance-sparkline" viewBox="0 0 300 40" preserveAspectRatio="none"></svg>
+                <div class="balance-sparkline-caption">Balance, last 14 days</div>
+            </div>
+
             <div class="brief-stats" id="brief-stats" style="display:none;">
                 <div class="brief-stat">
                     <span class="brief-stat-label">Total Balance</span>
-                    <span class="brief-stat-value" id="brief-stat-balance">$0.00</span>
+                    <span class="brief-stat-value brief-stat-value-hero" id="brief-stat-balance">$0.00</span>
+                    <span class="brief-stat-trend" id="brief-stat-trend" style="display:none;"></span>
+                </div>
+                <div class="brief-stat" id="pace-badge-wrap" style="display:none;">
+                    <span class="brief-stat-label">Spending Pace</span>
+                    <span class="pace-badge" id="pace-badge"></span>
+                </div>
+                <div class="brief-stat">
+                    <span class="brief-stat-label">Unassigned</span>
+                    <span class="brief-stat-value brief-stat-value-quiet" id="brief-stat-unassigned">$0.00</span>
                 </div>
             </div>
 
@@ -178,22 +217,34 @@
             </div>
             <div class="brief-content" id="brief-content" style="display:none;">
                 <div class="brief-text" id="brief-text"></div>
+                <div class="brief-freshness" id="brief-freshness"></div>
                 <button class="brief-refresh" onclick="loadMorningBrief()">Refresh Brief</button>
             </div>
 
             <div class="brief-section">
                 <div class="brief-section-title">🎯 Today's Priorities</div>
                 <div id="dash-goals">
-                    <div class="dash-empty">Loading goals...</div>
+                    <div class="skeleton-group">
+                        <div class="skeleton-line" style="width:70%"></div>
+                        <div class="skeleton-line" style="width:45%"></div>
+                    </div>
                 </div>
             </div>
 
             <div class="brief-section">
                 <div class="brief-section-title">📄 Bills Due Soon</div>
                 <div id="dash-bills">
-                    <div class="dash-empty">Loading bills...</div>
+                    <div class="skeleton-group">
+                        <div class="skeleton-line" style="width:60%"></div>
+                        <div class="skeleton-line" style="width:38%"></div>
+                    </div>
                 </div>
             </div>
+        </div>
+
+        <div class="panel getting-started-card" id="getting-started-card" style="display:none;">
+            <h2>🚀 Getting Started</h2>
+            <div id="getting-started-list"></div>
         </div>
 
         <div class="nav-launch-grid">
@@ -255,6 +306,7 @@
         <div class="tab" id="tab-goals">
             <div class="panel">
                 <h2>Goals & Tasks</h2>
+                <div class="ai-insight-callout" id="goals-insight-callout" style="display:none;"></div>
                 <p class="instructions">Add goals and recurring tasks. Claude uses these to build your morning brief and daily priorities.</p>
                 <input type="text" id="goal-title" placeholder="Goal or task title" class="input-field">
                 <div class="form-row">
@@ -277,6 +329,7 @@
                 <input type="text" id="goal-notes" placeholder="Notes (optional)" class="input-field">
                 <input type="text" id="goal-why" placeholder="Why do you want this? (optional)" class="input-field">
                 <input type="text" id="goal-reward" placeholder="Reward when you hit it (optional)" class="input-field">
+                <input type="number" id="goal-target" placeholder="Dollar target — e.g. saving for something (optional)" class="input-field" min="0" step="0.01">
                 <button class="btn" onclick="addGoal()">Add Goal</button>
                 <div id="goals-list"></div>
             </div>
@@ -387,6 +440,7 @@
         <div class="tab active" id="tab-budget">
             <div class="panel">
                 <h2>Paycheck Breakdown</h2>
+                <div class="ai-insight-callout" id="budget-insight-callout" style="display:none;"></div>
                 <p class="instructions">Enter your paycheck and Claude will allocate it across all your accounts and bills.</p>
                 <input type="number" id="paycheck-amount" placeholder="Paycheck amount ($)" class="input-field">
                 <input type="date" id="paycheck-date" class="input-field">
@@ -401,7 +455,8 @@
                 <h2>My Bills</h2>
                 <p class="instructions">Add your recurring bills with their next due date. The app tracks future due dates automatically.</p>
                 <div class="form-row">
-                    <input type="text" id="bill-name" placeholder="Bill name" class="input-field">
+                    <input type="text" id="bill-name" placeholder="Bill name" class="input-field" list="bill-name-suggestions" oninput="autofillBillAmount()" autocomplete="off">
+                    <datalist id="bill-name-suggestions"></datalist>
                     <input type="number" id="bill-amount" placeholder="Amount ($)" class="input-field">
                 </div>
                 <div class="form-row">
@@ -477,7 +532,8 @@
                     <option value="medical">Medical</option>
                     <option value="other">Other</option>
                 </select>
-                <input type="text" id="expense-description" placeholder="Description" class="input-field">
+                <input type="text" id="expense-description" placeholder="Description" class="input-field" list="expense-description-suggestions" oninput="autofillExpenseFields()" autocomplete="off">
+                <datalist id="expense-description-suggestions"></datalist>
                 <input type="number" id="expense-amount" placeholder="Amount ($)" class="input-field">
                 <input type="date" id="expense-date" class="input-field">
                 <button class="btn" onclick="addExpense()">Log Expense</button>
@@ -489,7 +545,7 @@
 
     </div>
 
-    <script src="/app.js?v=5"></script>
+    <script src="/app.js?v=16"></script>
 
 </body>
 </html>

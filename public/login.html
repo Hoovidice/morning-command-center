@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Morning Command Center — Log In</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0d1b2e">
+    <link rel="stylesheet" href="style.css?v=14">
     <style>
         /* Applied immediately (before the page paints) so this page matches
            whatever theme was last chosen on the main app — no flash. */
@@ -149,7 +154,7 @@
             <!-- LOG IN FORM -->
             <form class="auth-form active" id="login-form" onsubmit="return handleLogin(event)">
                 <label class="auth-label" for="login-email">Email</label>
-                <input class="input-field" type="email" id="login-email" required autocomplete="email">
+                <input class="input-field" type="email" id="login-email" required autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false">
 
                 <label class="auth-label" for="login-password">Password</label>
                 <input class="input-field" type="password" id="login-password" required autocomplete="current-password">
@@ -163,7 +168,7 @@
                 <input class="input-field" type="text" id="signup-name" required autocomplete="name">
 
                 <label class="auth-label" for="signup-email">Email</label>
-                <input class="input-field" type="email" id="signup-email" required autocomplete="email">
+                <input class="input-field" type="email" id="signup-email" required autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false">
 
                 <label class="auth-label" for="signup-password">Password</label>
                 <input class="input-field" type="password" id="signup-password" required autocomplete="new-password" minlength="6">
