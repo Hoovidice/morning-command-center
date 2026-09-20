@@ -69,6 +69,14 @@ if (!isProduction && process.env.SESSION_SECRET === undefined && process.env.NOD
 
 app.use(express.static(path.join(__dirname, '../public')));
 
+// A simple, unauthenticated endpoint that just confirms the server is up
+// and can reach its own process info. Standard practice for anything you'd
+// run in production — a host or monitoring tool can hit this instead of
+// guessing whether the app is alive from a real page load.
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
 // ── ROUTES ───────────────────────────────────────────────
 // Each of these used to be defined inline in one 1,200+ line server.js.
 // Splitting them into their own files means a change to, say, how bills
@@ -91,5 +99,40 @@ app.use('/api/weekly-reviews', require('./routes/weeklyReviews'));
 app.use('/api/reflections', require('./routes/reflections'));
 app.use('/api/monthly-reflections', require('./routes/monthlyReflections'));
 app.use('/api/export', require('./routes/exportData'));
+
+// ── 404 (no route matched) ────────────────────────────────
+// Anything that reaches here didn't match a static file or a route above.
+// An API path gets a small JSON error; anything else gets a plain page
+// instead of Express's default unstyled error screen.
+app.use((req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'Not found' });
+    }
+    res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Page not found</title></head>
+        <body style="font-family:sans-serif;background:#080c14;color:#c8d8e8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+            <div style="text-align:center;">
+                <h1 style="color:#4a9eff;">404</h1>
+                <p>That page doesn't exist.</p>
+                <a href="/" style="color:#4a9eff;">Back to Morning Command Center</a>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+// ── GLOBAL ERROR HANDLER ───────────────────────────────────
+// A safety net for anything a route didn't already catch itself (most do
+// their own try/catch and respond directly). Express only recognizes this
+// as an error handler because it takes four arguments — logs the real
+// error server-side, but never leaks stack traces or internals to the
+// client.
+app.use((err, req, res, next) => {
+    logger.error('Unhandled error', { error: err.message, path: req.path });
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: 'Something went wrong on our end.' });
+});
 
 module.exports = app;
