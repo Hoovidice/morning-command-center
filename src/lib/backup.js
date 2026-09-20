@@ -1,24 +1,20 @@
 // Automated database backups.
 //
-// Why this exists: on Render's free tier, every deploy tears down the old
-// container and starts a fresh one, which wipes the SQLite database
-// completely (see the project notes on this). Paying for a persistent disk
-// fixes that outright, but this gives a free safety net in the meantime —
-// every few hours, the whole database gets dumped to a timestamped JSON
-// file on disk. It won't survive a Render redeploy any better than the
-// database itself does (same ephemeral filesystem), but it protects
-// against the other ways data gets lost: a bad migration, an accidental
-// bulk delete, or just wanting to look at what the data looked like
-// yesterday. Locally, running in Docker with the bind-mounted project
-// folder, these backups DO persist across container restarts, same as the
-// database itself.
+// Why this exists: even with a persistent disk protecting the database
+// from disappearing on restart (see dataDir.js), a backup protects against
+// the other ways data gets lost — a bad migration, an accidental bulk
+// delete, or just wanting to look at what the data looked like yesterday.
+// Every few hours, the whole database gets dumped to a timestamped JSON
+// file inside DATA_DIR/backups, right alongside the database itself, so it
+// gets the same persistence guarantees.
 
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 const logger = require('../logger');
+const DATA_DIR = require('../dataDir');
 
-const BACKUPS_DIR = path.join(__dirname, '../../backups');
+const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
 const MAX_BACKUPS_KEPT = 14; // roughly the last week+ if run every ~6 hours
 
 const TABLES = [

@@ -1,11 +1,13 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const logger = require('./logger');
+const DATA_DIR = require('./dataDir');
 
-// Normally the real database file. Tests set DB_PATH to a throwaway file
-// (or ':memory:') before this module loads, so running the test suite
-// never touches your actual data.
-const dbPath = process.env.DB_PATH || path.join(__dirname, '../data.db');
+// Normally the real database file, inside DATA_DIR (see dataDir.js for why
+// that matters in production). Tests set DB_PATH to a throwaway file (or
+// ':memory:') before this module loads, so running the test suite never
+// touches your actual data.
+const dbPath = process.env.DB_PATH || path.join(DATA_DIR, 'data.db');
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');

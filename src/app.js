@@ -11,6 +11,7 @@ const dotenv = require('dotenv');
 const path = require('path');
 const helmet = require('helmet');
 const logger = require('./logger');
+const DATA_DIR = require('./dataDir');
 
 dotenv.config();
 
@@ -39,11 +40,11 @@ app.use(helmet({
 
 app.use(express.json());
 app.use(session({
-    // Sessions are saved to disk (in the "sessions" folder) instead of just
+    // Sessions are saved to disk (under DATA_DIR/sessions) instead of just
     // living in memory, so restarting the app (or the Docker container)
     // doesn't silently log everyone out anymore.
     store: new FileStore({
-        path: path.join(__dirname, '../sessions'),
+        path: path.join(DATA_DIR, 'sessions'),
         retries: 0,
         logFn: function () {} // quiet — we don't need file-store's own console noise
     }),
