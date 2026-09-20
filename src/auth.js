@@ -33,8 +33,15 @@ async function verifyUser(email, password) {
 }
 
 function getUserById(id) {
-    const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(id);
-    return user;
+    const user = db.prepare('SELECT id, email, name, monthly_budget_limit, onboarded FROM users WHERE id = ?').get(id);
+    if (!user) return user;
+    return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        monthlyBudgetLimit: user.monthly_budget_limit,
+        onboarded: !!user.onboarded
+    };
 }
 
 function requireAuth(req, res, next) {

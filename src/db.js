@@ -1,7 +1,12 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const logger = require('./logger');
 
-const db = new Database(path.join(__dirname, '../data.db'));
+// Normally the real database file. Tests set DB_PATH to a throwaway file
+// (or ':memory:') before this module loads, so running the test suite
+// never touches your actual data.
+const dbPath = process.env.DB_PATH || path.join(__dirname, '../data.db');
+const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
 
@@ -136,6 +141,18 @@ db.exec(`
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    -- One row per user per day: the total balance across all their accounts
+    -- at snapshot time. Lets the dashboard show "trending up/down" instead
+    -- of just a flat number, by comparing today's total to one from ~7 days ago.
+    CREATE TABLE IF NOT EXISTS balance_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        total_balance REAL NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        UNIQUE(user_id, date)
+    );
 `);
 
 // daily_tasks was created before "time" existed as a column. SQLite has no
@@ -155,6 +172,53 @@ try {
     // already added — nothing to do
 }
 
-console.log('Database initialized successfully');
+// A user-set monthly spending ceiling (separate from the paycheck-planner
+// "Budget" feature). Powers the pace badge: how much of the month has
+// passed vs. how much of this limit has been spent.
+try {
+    db.exec('ALTER TABLE users ADD COLUMN monthly_budget_limit REAL');
+} catch (error) {
+    // already added — nothing to do
+}
+
+// Marks whether a user has been through the first-time guided walkthrough,
+// so it only ever shows once per account.
+try {
+    db.exec('ALTER TABLE users ADD COLUMN onboarded INTEGER DEFAULT 0');
+} catch (error) {
+    // already added — nothing to do
+}
+
+// A dollar target and running saved-so-far amount per goal, so leftover
+// balance can be "assigned" to a goal (YNAB-style) instead of just sitting
+// in an account unlabeled.
+try {
+    db.exec('ALTER TABLE goals ADD COLUMN target_amount REAL');
+} catch (error) {
+    // already added — nothing to do
+}
+try {
+    db.exec('ALTER TABLE goals ADD COLUMN saved_amount REAL DEFAULT 0');
+} catch (error) {
+    // already added — nothing to do
+}
+
+// Tracks the last date a user's weekly digest push was sent, so it goes
+// out once every ~7 days per user instead of every time the check runs.
+try {
+    db.exec('ALTER TABLE users ADD COLUMN last_digest_sent TEXT');
+} catch (error) {
+    // already added — nothing to do
+}
+
+// Tracks the last date a user got an "over pace" spending alert, so it
+// only fires once per day even though the check runs hourly.
+try {
+    db.exec('ALTER TABLE users ADD COLUMN last_pace_alert TEXT');
+} catch (error) {
+    // already added — nothing to do
+}
+
+logger.info('Database initialized successfully');
 
 module.exports = db;
