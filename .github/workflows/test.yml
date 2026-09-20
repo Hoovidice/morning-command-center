@@ -1,0 +1,32 @@
+name: Tests
+
+# Runs the automated test suite (see __tests__/) every time code is pushed
+# or a pull request is opened against main. This is what a "CI pipeline"
+# means in practice: instead of trusting that a change didn't break
+# anything, GitHub actually runs the tests on a clean machine and reports
+# pass/fail right on the commit or pull request.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
